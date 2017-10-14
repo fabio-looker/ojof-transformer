@@ -1,0 +1,28 @@
+{
+  "name": "ojof-transformer",
+  "version": "0.0.0",
+  "description": "Makes an OJOF Model file given a set of view files",
+  "main": "index.js",
+  "dependencies": {
+    "glob": "^7.1.2",
+    "minimist": "^1.2.0",
+    "pegjs": "^0.10.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fabio-looker/ojof-transformer.git"
+  },
+  "keywords": [
+    "LookML"
+  ],
+  "author": "Fabio Beltramini",
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/fabio-looker/ojof-transformer/issues"
+  },
+  "homepage": "https://github.com/fabio-looker/ojof-transformer#readme"
+}
