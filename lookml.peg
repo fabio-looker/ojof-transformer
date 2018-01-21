@@ -1,23 +1,35 @@
 {
-	function groupDeclarations(arr){
-			return arr.reduce((accum,x,i)=>{
-					if(x.name){
-							var valWName=Object.assign({},x.value,{_name:x.name})
-							if(!accum[x.type]){ accum[x.type]={}; accum[x.type+'s']=[] }
-							accum[x.type+'s'].push(valWName)
-							accum[x.type][x.name]=valWName
-					} else {
-							if  (!accum[x.type])
-							{accum[x.type] = x.value}
-							else
-							if  (accum[x.type].push)
-							{accum[x.type].push(x.value) }
-							else
-							{accum[x.type] = [accum[x.type]]
-							 accum[x.type].push(x.value) }
+	function assignSuper(obj,type,name){
+			if(typeof obj != "object" || !type || !name){return {}}
+			obj["_"+type]=name
+			Object.values(obj).forEach(subObj => assignSuper(subObj, type, name)) 
+			return obj;
+		}
+	function groupDeclarations(params){
+			var collection = {};
+			params.forEach(p=>{
+					assignSuper(p.value,p.type,p.name)
+					if(p.name){		
+							if(!collection[p.type]){
+									collection[p.type]={};
+									collection[p.type+'s']=[];
+								}
+							collection[p.type+'s'].push(p.value);
+							collection[p.type][p.name]=p.value;
+						} else {
+							if (!	collection[p.type]){
+									collection[p.type] = p.value
+								}
+							else if(collection[p.type].push){
+									collection[p.type].push(p.value)
+								}
+							else{
+									collection[p.type] = [collection[p.type]]
+									collection[p.type].push(p.value)
+							}
 						}
-					return accum;
-				},{})
+				})
+			return collection
 		}
 }
 
