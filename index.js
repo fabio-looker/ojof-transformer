@@ -23,7 +23,7 @@ dot.templateSettings = {
 		strip: false,
 		append: true,
 		selfcontained: false
-	}; 
+	};
 
 const inputGlob = cliArgs.input || cliArgs.i || "*.view.lkml"
 const globOptions = {} //cliArgs
@@ -62,82 +62,8 @@ const model = inputFiles.map((file,f)=>{
 				views:set.views.concat(file.views),
 				errors:set.errors.concat(file.errors||[])
 			}),{view:{},views:[],errors:[]})
-		
-//const singleColRegex=/^[_a-zA-Z][_a-zA-Z0-9$]*$|^"[^"]+"$/
-// const explore = {
-// 		name:"ojof",
-// 		label:"All the things",
-// 		other:""
-// 	}
-// const transformed = Object.assign({
-// 		generator,
-// 		explore,
-// 		views:Object.entries(viewObjs)
-// 				.map(([v,view],vi)=>Object.assign({},view,{
-// 						n:vi,
-// 						name: lookmlName(v)+"_v"+vi,
-// 						mName:lookmlName(v)+"_v"+vi+"_msr",
-// 						dName:lookmlName(v)+"_v"+vi+"_dim"
-// 					}))
-// 				.map((v,vi)=>Object.assign({},v,{
-// 						dimensions:[
-// 							//#CONTINUE
-// 
-// 
-// 							].reduce(flatten,[]),
-// 						measures:[
-// 
-// 
-// 							].reduce(flatten,[])
-// 					))
-// 						v.fields.map((f,fi)=>Object.assign({},f,{
-// 								n:fi,
-// 								viewName:v.name,
-// 								name:lookmlName(f.label)+"_"+fi,
-// 								dim:f.dim /*~f.modes.indexOf("dim")*/ && f.type!="date",
-// 								ddg:f.dim /*~f.modes.indexOf("dim")*/ && f.type=="date",
-// 								codim:f.codim?lookmlName(f.codim):undefined,
-// 								sql:(f.sql||'').match(singleColRegex)
-// 									?"${TABLE}."+f.sql
-// 									:f.sql
-// 							})).map((f,fi)=>Object.assign({},f,{
-// 								sqlInner:f.sql.replace(/\$\{TABLE\}/g, v.name),
-// 								sqlMsr:f.sql.replace(/\$\{TABLE\}/g, "${msr}"),
-// 								sqlDim:f.sql.replace(/\$\{TABLE\}/g, "${dim}"),
-// 								sqlDimWeak:f.sql.replace(/\$\{TABLE\}/g, "${ojof."+v.dName+"}")
-// 							}))
-// 					}))
-// 			,
-// 		normalizedRelationships:x.normalizedRelationships.map((r,ri)=>Object.assign({},r,{
-// 				leftViewName:lookmlName(r.leftViewName),
-// 				rightViewName:lookmlName(r.rightViewName),
-// 			})),
-// 		codims:x.codims.map((c,ci)=>Object.assign({},c,{
-// 				codim:true,
-// 				n:ci,
-// 				name:lookmlName(c.label)+"_c"+ci,
-// 				dName:lookmlName(c.label)+"_c"+ci
-// 			}))
-// 	});
-// 
-// 
-// const normalizedRelationships = views.map(view =>
-// 		(view.foreign_keys||[]).map( fk => Object.assign({},fk,{
-// 					leftViewName: view._name,
-// 					rightViewName: fk.for
-// 			}))
-// 	).reduce(flatten,[])
-// 
-// const codims = views
-// 		.map(view => view.dimensions.concat(view.dimension_groups)
-// 				.filter(d=>d.codimension)
-// 				.map(d=>Object.assign({},d,{_view:view._name}))
-// 			)
-// 		.reduce(flatten,[])
 
-//const model = { generator, views, normalizedRelationships, codims, connectionName:""}
-//const out = build({view:views})
-//console.log("`model`, `out` available for inspection")
+
 console.log("`model` available for inspection")
 
 // Interactive testing for development...
@@ -148,4 +74,15 @@ const r = repl.start({writer:x=>
 		.replace(/: "([^"]{60})[^"]+"/,': "$1..."')
 	})
 r.context.model = model
-//r.context.build = ()=>build(model)
+r.context.build = ()=>build(Object.assign(model,{
+		generator:{
+				name: "OJOF Generator",
+				v: "0.0.1",
+
+			},
+		explore:{
+				name: "ojof",
+				label: "All the things"
+			},
+		dialect:"Redshift"
+	})

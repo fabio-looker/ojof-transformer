@@ -1,0 +1,485 @@
+<<!
+function View(name){return x.view[name]};
+function righterViews(baseView) {
+		return viewsInDirection(baseView,"right",10)
+	};
+function lefterViews(baseView){
+		return viewsInDirection(baseView,"left",10)
+	};
+function rightViews(baseView) {
+		return viewsInDirection(baseView,"right",1)
+	};
+function leftViews(baseView){
+		return viewsInDirection(baseView,"left",1)
+	};
+function viewsInDirection(baseView,direction,depth){
+		var baseViewName = typeof baseView == "string" ? baseView : baseView._view;
+		return recurNamesInDirection(baseViewName,direction,depth).filter(unique).map(viewFromName);
+};
+function recurNamesInDirection(baseViewName,dir,remainingRecursion){
+		var immediateViewNames
+				= x.views
+				.map(v=>v.foreign_key)
+				.reduce(flatten,[])
+				.map(d=>
+						dir=="left"  && baseViewName == d.for ? d._view :
+						dir=="right" && baseViewName == d._view ? d.for :
+						false
+					)
+				.filter(Boolean);
+		return (immediateViewNames.length && remainingRecursion
+				? immediateViewNames.map(p=>recurNamesInDirection(p,dir,remainingRecursion-1)).reduce(flatten,immediateViewNames)
+				: []
+			);
+	};
+function sqlString(s){
+		switch (x.dialect){
+				case 'Redshift': /* ??? Thanks Amazon.... http://docs.aws.amazon.com/redshift/latest/dg/r_Literals.html */
+				case 'BigQuery Standard': /* https://cloud.google.com/bigquery/docs/reference/standard-sql/lexical#string-and-bytes-literals */
+						return "'"+(s||'').replace(/\\/g,"\\\\").replace(/'/g,"\\'")+"'"
+			}
+	};
+function measureNames(view){
+		return (["sum","avg","min","max","list"]
+				.map(measureType=>view.fields.map(field=>field[measureType] && measureType+"_"+field.name))
+				.reduce(flatten,["count_pk"])
+				.filter(truthy)
+			)
+	}
+function dimensionNames(viewOrField){
+		return (
+				[{flag:"dim", prefix:"dim_", suffix:""}]
+				.concat(x.timeframes.map(t=>({flag:"ddg", prefix:"ddg_", suffix:"_"+t})))
+				.map(dimensionType=>
+						(viewOrField.fields || [viewOrField])
+						.map(field=>
+								field[dimensionType.flag] && dimensionType.prefix+field.name+dimensionType.suffix
+							)
+					)
+				.reduce(flatten,["dim_pk"])
+				.filter(truthy)
+			)
+	};
+function codimNames(codim){
+		return (codim.type!="date"
+				? [codim.name]
+				: x.timeframes.map(t=>codim.name+"_"+t)
+			);
+	};
+/*
+function measurePaths(view){
+		return measureNames(view).map(field=>view.mTable+"."+field)
+	};
+function dimensionPaths(viewOrField){
+		return dimensionNames(viewOrField).map(field=>view.dName+"."+field)
+	};
+function fieldPaths(view){
+		return measurePaths(view).concat(dimensionPaths(view))
+	}*/
+>>
+# Warning:  This file is programatically generated (Your changes will be overwritten)
+# OJOF Generator by Fabio
+# Generator v<<:x.generator.v>> (<<:x.generator.date>>)
+# Generated on <<:(new Date()).toISOString().slice(0,10)>>
+
+explore: <<:x.explore.name>> {
+	label:"<<:x.explore.label>>"
+
+	# "Measure" joins
+	<<* x.views :view:v >>
+	join: <<:view._view>>_msr {
+		from: <<:view._view>>
+		type: full_outer
+		relationship: one_to_one
+		<<? x.dialect=="BigQuery Standard" >>
+		sql_on: FALSE ;;
+		<<?? x.dialect=="Redshift" >>
+		#Redshift (Only allows FOJ on merge joins, which require dist & sort key equality)
+		sql_on: /**/
+				<<:view._view>>.<<:view.distribution_key>> = ${<<:x.explore.name>>.base}
+			#CONTINUE
+			AND <<:view.mTable>>.<<:view.rs.sort>> = ${<<:x.explore.name>>.base}
+			<<* x.views.filter(prior=>prior.n<view.n) :prior:p >>
+			{%  if <<:prior.mFields>>._in_query or <<:prior.dFields>>._in_query %}
+			AND <<:view.mTable>>.<<:view.rs.dist>> = <<:prior.mTable>>.<<:prior.rs.dist>>
+			AND <<:view.mTable>>.<<:view.rs.sort>> = <<:prior.mTable>>.<<:prior.rs.sort>>
+			{% endif %}
+			<<*>>
+		;;
+		<<?>>
+	}
+	join: <<:view.mFields>> {
+		sql: ;;
+		required_joins:[<<:view.mTable>>]
+		relationship: one_to_one
+	}
+	<<*>>
+
+	#Selected "Dimension table" joins
+	<<* x.views :view:v >>
+	join: <<:view.dConditional>> {# "conditional" join
+		from: nothing
+		relationship: one_to_one
+		required_joins:[
+			<<* lefterViews(view) :left:l>> <<?l!=0>>,<<?>><<:left.dTable>> <<*>>
+		]
+		sql:{%	if <<:view.mFields>>._in_query
+				or <<:view.dFields>>._in_query
+				<<* lefterViews(view) :left:l>>
+				or <<:left.mFields>>._in_query
+				or <<:left.dFields>>._in_query
+				<<*>>
+			%}			/* Allow <<:view.dTable>> */
+			{% else %}	/* Prevent <<:view.dTable>> {% endif %}{% if '1'=='0' %}*/
+			{% endif %}
+		;;
+	}
+	join: <<:view.dTable>> {
+		from: <<:view.bTable>>
+		type: left_outer
+		relationship: many_to_one
+		required_joins:[ <<:view.dConditional>> ]
+		sql_on: <<:view.dTable>>.<<:view.pk.key>> =
+			COALESCE(
+				{%	if <<:view.mFields>>._in_query or <<:view.dFields>>._in_query %}
+					--Own view has dims or measures selected, so self.mView will be joined. Include via pk
+					<<:view.mTable>>.<<:view.pk.key>>,
+				{% endif %}
+			<<* leftViews(view) :leftView>>
+				{%	if <<:leftView.mFields>>._in_query or <<:leftView.dFields>>._in_query
+					<<* lefterViews(leftView) :lefterView>>
+					or <<:lefterView.mFields>>._in_query or <<:lefterView.dFields>>._in_query
+					<<*>>
+				%}
+				--Parent view fields selected, so parent.dView will be joined. Include via fk
+				--or ancestor view has dims or measures selected, so parent.dView will be joined. Include via fk
+				<<:leftView.dTable>>.<<:x.normalizedRelationships.find(r=>
+						r.leftViewName==leftView.name && r.rightViewName==view.name
+					).foreignKey>>,
+				{% endif %}
+			<<*>>
+				NULL
+			)
+		<<? x.dialect=="Redshift" && view.rs.distgroup >>
+		--Distkey equality (unless incompatible parents are in query)
+		{%	unless '0'=='1'
+			<<* leftViews(view) :parentView>>
+			<<? parentView.rs.distgroup != view.rs.distgroup >>
+			or <<:parentView.mFields>>._in_query
+			or <<:parentView.dFields>>._in_query
+			<<?>>
+			<<*>>
+		%}
+		AND <<:view.dTable>>.<<:view.rs.dist>> =
+			COALESCE(
+				{%	if <<:view.mFields>>._in_query or <<:view.dFields>>._in_query %}
+					--Own view has dims or measures selected, so self.mView will be joined. Include via dk
+					<<:view.mTable>>.<<:view.rs.dist>>,
+				{% endif %}
+			<<* leftViews(view) :parentView>>
+				{%	if <<:parentView.mFields>>._in_query or <<:parentView.dFields>>._in_query
+					<<* lefterViews(parentView) :lefterView:l>>
+					or <<:lefterView.mFields>>._in_query or <<:lefterView.dFields>>._in_query
+					<<*>>
+				%}
+				--Parent view fields selected, so parent.dView will be joined. Include via dk
+				--or ancestor view has dims or measures selected, so parent.dView will be joined. Include via dk
+				<<:parentView.dTable>>.<<:parentView.rs.dist>>,
+				{% endif %}
+			<<*>>
+				NULL
+			)
+		{% endunless %}
+		<<?>>
+		-- End conditional join */
+		;;
+	}
+	join: <<:view.dFields>>{
+		sql: ;;
+		required_joins:[<<:view.dTable>>]
+		relationship: one_to_one
+	}
+	<<*>>
+	<<:x.explore.other>>
+}
+
+view: nothing {}
+#"Base" (empty) View
+view: <<:x.explore.name>> {
+	view_label: "[<<:x.explore.label>>]"
+	<<? x.dialect=="BigQuery Standard">> #BQ
+	sql_table_name: (SELECT base FROM (SELECT null as base) as basetable WHERE base IS NOT NULL);;
+	<<?? x.dialect=="Redshift">> #Redshift
+	derived_table: {
+		sql: (SELECT base FROM (SELECT null as base) as basetable WHERE base IS NOT NULL) ;;
+		persist_for: "120 hours"
+		distribution: "base"
+		sortkeys: ["base"]
+	}
+	<<?>>
+	dimension: base {
+		hidden: yes
+		sql: ${TABLE}.base ;;
+	}
+	<<* x.codims :codim:c>>
+	<<? codim.type=="date">>dimension_group<<??>>dimension<<?>>: <<:codim.name>> {
+			view_label: <<? codim.viewLabel=="[Base view]">>"[<<:x.explore.label>>]"<<??>>"<<:codim.viewLabel>>"<<?>>
+			<<? codim.type=="date">>
+			type: time
+			timeframes: [<<:x.timeframes.join(",")>>]
+			group_label: "<<:codim.label>>"
+			label: " "
+			<<??>>
+			<<?codim.type>>type: <<:codim.type>><<?>>
+			label: "<<:codim.label>>"
+			<<?>>
+			sql: COALESCE(
+				<<* x.views :view:v>>
+				<<* view.fields :field:f>>
+					<<? field.codim == codim.name >>
+						{%	if <<:view.dFields>>._in_query
+							<<* lefterViews(view) :left:l>>
+							or <<:left.dFields>>._in_query
+							<<*>>
+						%}
+						{%	if <<:view.dFields>>._in_query
+							<<* righterViews(view) :right:r>>
+							or <<:right.dFields>>._in_query
+							<<*>>
+						%}
+							<<? view.fields.filter(field2=>field2.codim==field.codim).length>1 >>
+								CASE WHEN	{% condition <<:view.dFields>>.codim_switch_<<:codim.name>> %}
+											<<:sqlString(field.label)>>
+											{% endcondition %}
+									 THEN	<<:field.dSql>>
+									 ELSE NULL
+								END,
+							<<??>>
+								<<:field.dSql>>,
+							<<?>>
+						{% endif %}
+						{% endif %}
+						{%	if <<:view.mFields>>._in_query
+							<<* lefterViews(view) :left:l>>
+							or <<:left.mFields>>._in_query
+							<<*>>
+						%}
+						{% if <<:view.mFields>>._in_query
+							<<* righterViews(view) :right:r>>
+							or <<:right.mFields>>._in_query
+							<<*>>
+						%}
+							<<? view.fields.filter(field2=>field2.codim==field.codim).length>1 >>
+								CASE WHEN	{% condition <<:view.dFields>>.codim_switch_<<:codim.name>> %}
+											<<:sqlString(field.label)>>
+											{% endcondition %}
+									 THEN <<:field.mSql>>
+									 ELSE NULL
+								END,
+							<<??>>
+								<<:field.mSql>>,
+							<<?>>
+						{% endif %}
+						{% endif %}
+					<<?>>
+				<<*>>
+				<<*>>
+				NULL
+			);;
+		}
+	<<*>>
+
+	# Maybe add this pattern to the generator too?
+	#
+	#measure: product_conversion_rate {
+	#	type: number
+	#	value_format_name: decimal_3
+	#	sql: CASE WHEN ${pageviews.count}<>0 THEN ${orders.count} / ${pageviews.count} ELSE NULL END;;
+	#}
+	#
+}
+
+#####################################
+#
+#    "REAL" VIEWS
+#
+#####################################
+<<* x.views :view >>
+view: <<:view.bTable>> {
+	derived_table: {
+		sql:
+			SELECT *
+			FROM <<:view.table>> as <<:view.bTable>>
+			WHERE 1=1
+			<<* view.fields :field:f>>
+				<<!/* Push dimension filters onto the associated measure tables */>>
+				<<* dimensionNames(field) :dim:d>>
+						{% if <<:view.dFields>>.<<:dim>>._is_filtered %}
+							AND {% condition <<:view.dFields>>.<<:dim>> %} <<:field.bSql>> {% endcondition %}
+						{% endif %}
+				<<*>>
+				<<!/* Push codim filters onto the associated dimension and measure tables */>>
+				<<* x.codims :codim:c>>
+					<<? field.codim == codim.name >>
+					<<* codimNames(codim) :typedName:t>>
+						{% if <<:x.explore.name>>.<<:typedName>>._is_filtered %}
+							<<? view.fields.filter(field2=>field2.codim==field.codim).length>1 >>
+							AND CASE
+								WHEN {% condition <<:view.dFields>>.codim_switch_<<:codim.name>> %}
+									 <<:sqlString(field.label)>>
+									 {% endcondition%}
+								THEN {% condition <<:x.explore.name>>.<<:typedName>> %}
+									 <<:field.bSql>>
+									 {% endcondition %}
+								ELSE 1=1 END
+							<<??>>
+							AND {% condition <<:x.explore.name>>.<<:typedName>> %}
+								<<:field.bSql>>
+								{% endcondition %}
+							<<?>>
+						{% endif %}
+					<<*>>
+					<<?>>
+				<<*>>
+			<<*>>
+		;;
+	}
+}
+view: <<:view.mFields>> {
+	label: "<<:view.label>>"
+	<<?x.dialect=="Redshift">>
+	dimension: dist{
+		hidden: yes
+		sql:<<:view.mTable>>.<<:view.rs.dist>>;;
+	}
+	dimension: sort{
+		hidden: yes
+		sql:<<:view.mTable>>.<<:view.rs.sort>>;;
+	}
+	<<?>>
+	dimension: require {
+		hidden:yes
+		sql: ;;
+	}
+	dimension: pk {
+		hidden: yes
+		sql: <<:view.mTable>>.<<:view.pk.key>>;;
+	}
+
+	measure: count_pk {
+		hidden: <<:view.pk.count ? "no" : "yes">>
+		label: "<<:view.label>> Count"
+		type: number
+		sql: CASE WHEN MIN(${pk}) IS NULL THEN NULL ELSE COUNT(${pk}) END ;;
+	}
+	<<*view.fields :field>>
+	<<?field.sum>>
+	measure: sum_<<:field.name>> {
+		type: number
+		label: "Sum of <<:field.label>>"
+		sql: SUM(<<:field.mSql>>) ;;
+		<<:field.otherLookml>>
+	}
+	<<?>>
+
+	<<?field.avg>>
+	measure: avg_<<:field.name>> {
+		type: number
+		label: "Average of <<:field.label>>"
+		sql: AVG(<<:field.mSql>>) ;;
+		<<:field.otherLookml>>
+	}
+	<<?>>
+
+	<<?field.min>>
+	measure: min_<<:field.name>> {
+		type: <<:field.type>>
+		<<?field.type=="date">>
+		label: "Earliest <<:field.label>>"
+		<<??>>
+		label: "Max of <<:field.label>>"
+		<<?>>
+		sql: MIN(<<:field.mSql>>) ;;
+		<<:field.otherLookml>>
+	}
+	<<?>>
+
+	<<?field.max>>
+	measure: max_<<:field.name>> {
+		type: <<:field.type>>
+		<<?field.type=="date">>
+		label: "Latest <<:field.label>>"
+		<<??>>
+		label: "Max of <<:field.label>>"
+		<<?>>
+		sql: MAX(<<:field.mSql>>) ;;
+		<<:field.otherLookml>>
+	}
+	<<?>>
+
+	<<?field.list>>
+	measure: list_<<:field.name>> {
+		type: string
+		label: "List of <<:field.label>>"
+		<<? x.dialect=="Redshift">>sql: LISTAGG(<<:field.mSql>>,', ') ;;<<?>>
+		<<? x.dialect=="BigQuery Standard">>sql: GROUP_CONCAT(<<:field.mSql>>) ;;<<?>>
+		<<:field.otherLookml>>
+	}
+	<<?>>
+	<<*>>
+}
+view: <<:view.dFields>> {
+	label: "<<:view.label>>"
+	dimension: pk {
+		hidden: yes
+		sql: <<:view.dTable>>.<<:view.pk.key>>;;
+	}
+	dimension: dim_pk {
+		hidden: <<:view.pk.dim ? "no" : "yes">>
+		label: "<<:view.label>> ID"
+		sql: <<:view.dTable>>.<<:view.pk.key>>  /* ${<<:view.mFields>>.require}*/;;
+	}
+	<<* view.fields :field>>
+	<<?field.dim>>
+	dimension: dim_<<:field.name>> {
+		<<?field.type>>type: <<:field.type>><<?>>
+		label: "<<:field.label>>"
+		sql: <<:field.dSql>> /* ${<<:view.mFields>>.require}*/;;
+		<<:field.otherLookml>>
+	}
+	<<?>>
+	<<?field.ddg>>
+	dimension_group: ddg_<<:field.name>> {
+		group_label: "<<:field.label>>"
+		label: " "
+		type: time
+		timeframes: [<<:x.timeframes.join(",")>>]
+		sql: <<:field.dSql>>  /* ${<<:view.mFields>>.require}*/;;
+		<<:field.otherLookml>>
+	}
+	<<?>>
+	<<*>>
+	#
+	# Codim selector(s)
+	#
+	set: codim_selectors{
+		fields:[
+		<<* x.codims :codim:c>>
+		<<? view.fields.filter(f=>f.codim==codim.name).length>1 >>
+		<<?c>0>>,<<?>> codim_switch_<<:codim.name>>
+		<<?>>
+		<<*>>
+		]
+	}
+	<<* x.codims :codim:c>>
+		<<? view.fields.filter(f=>f.codim==codim.name).length>1 >>
+		filter: codim_switch_<<:codim.name>> {
+			label: "<<?codim.type=='date'>>Date<<??>>Field<<?>> for <<:codim.label>>"
+			type: string
+			suggestions: ["<<:view.fields.filter(f=>f.codim==codim.name).map(f=>f.label).join('","')>>"]
+		}
+		<<?>>
+	<<*>>
+
+}
+<<*>>
