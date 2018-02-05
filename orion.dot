@@ -19,11 +19,11 @@ function viewsInDirection(baseView,direction,depth){
 function recurNamesInDirection(baseViewName,dir,remainingRecursion){
 		var immediateViewNames
 				= x.views
-				.map(v=>v.foreign_key)
+				.map(v=>v.foreign_keys.concat(v.dimensions.filter(d=>d.codim)))
 				.reduce(flatten,[])
 				.map(d=>
-						dir=="left"  && baseViewName == d.for ? d._view :
-						dir=="right" && baseViewName == d._view ? d.for :
+						dir=="left"  && baseViewName == d.for || d.codim ? d._view :
+						dir=="right" && baseViewName == d._view ? d.for || d.codim :
 						false
 					)
 				.filter(Boolean);
@@ -66,68 +66,95 @@ function codimNames(codim){
 				: x.timeframes.map(t=>codim.name+"_"+t)
 			);
 	};
-/*
-function measurePaths(view){
-		return measureNames(view).map(field=>view.mTable+"."+field)
+function if_if_ViewShouldBeJoinedLiquid(view){
+		var out="";
+		>>
+		{%	if '0'=='1'
+			<<* view.measures   :msr>>or <<:view._view>>_msr.<<:msr._measure  >>._in_query<<*>>
+			<<* view.dimensions :dim>>or <<:view._view>>_dim.<<:dim._dimension>>._in_query<<*>>
+			<<* lefterViews(view) :left:l>>
+			<<* left.measures   :msr>>or <<:view._view>>_msr.<<:msr._measure  >>._in_query<<*>>
+			<<* left.dimensions :dim>>or <<:view._view>>_dim.<<:dim._dimension>>._in_query<<*>>
+			<<*>>
+		%}
+		{% if '0'=='1'
+			<<* view.measures   :msr>>or <<:view._view>>_msr.<<:msr._measure  >>._in_query<<*>>
+			<<* view.dimensions :dim>>or <<:view._view>>_dim.<<:dim._dimension>>._in_query<<*>>
+			<<* righterViews(view) :right:r >>
+			<<? right.codim>> /*TODO <- finish populating necessary codim logic & methods */
+			...
+			<<??>>
+			<<* right.measures   :msr>>or <<:right._view>>_msr.<<:msr._measure  >>._in_query<<*>>
+			<<* right.dimensions :dim>>or <<:right._view>>_dim.<<:dim._dimension>>._in_query<<*>>
+			<<?>>
+			<<*>>
+		%}
+		<<! return out;
 	};
-function dimensionPaths(viewOrField){
-		return dimensionNames(viewOrField).map(field=>view.dName+"."+field)
-	};
-function fieldPaths(view){
-		return measurePaths(view).concat(dimensionPaths(view))
-	}*/
+	function if_DimJoin(view){
+			var out="";
+			>>
+			{% if '0' == '1'
+				<<* lefterViews(view)    :left>>
+				<<* left.measures   :msr>>or <<:view._view>>_msr.<<:msr._measure  >>._in_query<<*>>
+				<<* left.dimensions :dim>>or <<:view._view>>_dim.<<:dim._dimension>>._in_query<<*>>
+				<<*>>
+			%}
+			<<! return out;
+		};
 >>
 # Warning:  This file is programatically generated (Your changes will be overwritten)
 # OJOF Generator by Fabio
 # Generator v<<:x.generator.v>> (<<:x.generator.date>>)
 # Generated on <<:(new Date()).toISOString().slice(0,10)>>
 
-explore: <<:x.explore.name>> {
+explore: ojof {
 	label:"<<:x.explore.label>>"
 
 	# "Measure" joins
 	<<* x.views :view:v >>
+	<<? view.sql_table_name || view.derived_table >>
 	join: <<:view._view>>_msr {
 		from: <<:view._view>>
+		fields: [<<:view.measures.map(m=>m._measure).join(",")>>]
 		type: full_outer
 		relationship: one_to_one
-		<<? x.dialect=="BigQuery Standard" >>
-		sql_on: FALSE ;;
-		<<?? x.dialect=="Redshift" >>
-		#Redshift (Only allows FOJ on merge joins, which require dist & sort key equality)
-		sql_on: /**/
-				<<:view._view>>.<<:view.distribution_key>> = ${<<:x.explore.name>>.base}
-			#CONTINUE
-			AND <<:view.mTable>>.<<:view.rs.sort>> = ${<<:x.explore.name>>.base}
-			<<* x.views.filter(prior=>prior.n<view.n) :prior:p >>
-			{%  if <<:prior.mFields>>._in_query or <<:prior.dFields>>._in_query %}
-			AND <<:view.mTable>>.<<:view.rs.dist>> = <<:prior.mTable>>.<<:prior.rs.dist>>
-			AND <<:view.mTable>>.<<:view.rs.sort>> = <<:prior.mTable>>.<<:prior.rs.sort>>
-			{% endif %}
-			<<*>>
+		sql:
+			<<:if_if_ViewShouldBeJoinedLiquid(view)>>
+				/* Self|lefter & self|righter both in query. Bring in MSR <<:view._view>>_msr */
+					FULL OUTER JOIN <<:view._view>> AS <<:view._view>>_msr
+					ON <<? x.dialect=="BigQuery Standard" >> FALSE
+					<<?? x.dialect=="Redshift" >>/* FALSE -- Redshift only allows FOJ on merge joins, which require dist & sort key equality*/
+						<<:view._view>>_msr.<<:view.dist_key>> = ${ojof.none}
+						AND <<:view._view>>_msr.<<:view.sort_key>> = ${ojof.none}
+						<<* x.views.filter(prior=>prior._n<view._n) :prior:p >>
+						<<: if_if_ViewShouldBeJoinedLiquid(prior)>>
+							AND <<:view._view>>_msr.<<:view.dist_key>> = <<:prior._view>>_msr.<<:prior.dist_key>>
+							AND <<:view._view>>_msr.<<:view.sort_key>> = <<:prior._view>>_msr.<<:prior.sort_key>>
+						{% endif %}{% endif %}
+						<<*>>
+					<<?>>
+			{% else %}	/* Self|righter NOT in query. Prevent MSR <<:view._view>>_msr */ {% endif %}
+			{% else %}	/* Self|lefter NOT in query. Prevent MSR <<:view._view>>_msr */ {% endif %}
 		;;
-		<<?>>
 	}
-	join: <<:view.mFields>> {
-		sql: ;;
-		required_joins:[<<:view.mTable>>]
-		relationship: one_to_one
-	}
+	<<?>>
 	<<*>>
 
 	#Selected "Dimension table" joins
 	<<* x.views :view:v >>
-	join: <<:view.dConditional>> {# "conditional" join
+	join: <<:view._view>>_gate {# "conditional" join
 		from: nothing
 		relationship: one_to_one
 		required_joins:[
-			<<* lefterViews(view) :left:l>> <<?l!=0>>,<<?>><<:left.dTable>> <<*>>
+			<<* lefterViews(view) :left:l>> <<?l!=0>>,<<?>><<:left._view>>)_dim <<*>>
 		]
-		sql:{%	if <<:view.mFields>>._in_query
-				or <<:view.dFields>>._in_query
+		sql:{%	if '1'=='0'
+				<<*view.measures   :msr>>or <<:view._view>>_msr.<<:msr._measure>>._in_query<<*>>
+				<<*view.dimensions :dim>>or <<:view._view>>_dim.<<:dim._dimension>>._in_query<<*>>
 				<<* lefterViews(view) :left:l>>
-				or <<:left.mFields>>._in_query
-				or <<:left.dFields>>._in_query
+				<<*left.measures   :msr>>or <<:view._view>>_msr.<<:msr._measure>>._in_query<<*>>
+				<<*left.dimensions :dim>>or <<:view._view>>_dim.<<:dim._dimension>>._in_query<<*>>
 				<<*>>
 			%}			/* Allow <<:view.dTable>> */
 			{% else %}	/* Prevent <<:view.dTable>> {% endif %}{% if '1'=='0' %}*/
