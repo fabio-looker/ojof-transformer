@@ -1,5 +1,5 @@
 #! /usr/bin/env node
-const generator = {name:"ojof-transformer", v:"0.0.1", date:"2017-12-10"}
+const generator = {name:"ojof-transformer", v:"0.0.1", date:"2018-05-29"}
 const cliArgs = require('minimist')(process.argv.slice(
 		process.argv[0]=="ojof"
 		?1 //e.g. dot-cli --bla
@@ -9,8 +9,13 @@ const glob = require("glob")
 const fs = require("fs")
 const path = require("path")
 const peg = require("pegjs")
-const dot = require("dot")
 const util = require("util")
+const lookmlParser = require('lookml-parser')
+
+const inputPath = cliArgs.input || cliArgs.i || "."
+const read = f => fs.readFileSync(f,{encoding:'utf-8'})
+
+const dot = require("dot")
 dot.templateSettings = {
 		evaluate:    /\<\<\!([\s\S]+?)\>\>/g,
 		interpolate: /\<\<\:([\s\S]+?)\>\>/g,
@@ -24,18 +29,12 @@ dot.templateSettings = {
 		append: true,
 		selfcontained: false
 	};
-
-const inputGlob = cliArgs.input || cliArgs.i || "*.view.lkml"
-const globOptions = {} //cliArgs
-const read = f => fs.readFileSync(f,{encoding:'utf-8'})
-const readPkg = f => read(path.join(__dirname,f))
-const lookmlParser = peg.generate(readPkg("lookml.peg"))
-//const build = dot.template(readPkg("template.dot"))
-const inputFiles=glob.sync(inputGlob,globOptions)
+const orion = dot.template(read(path.join(__dirname,"orion.dot")))
+const inputFiles=glob.sync(inputPath+"/*.view.lkml")
 const flatten = (a,b) => a.concat(b)
 const fatalParseErrors = true
 
-if(!inputFiles.length){console.warn("Warning: No input files were matched. (Use argument --input=... )")}
+if(!inputFiles.length){console.warn("Warning: No views were found. (Provide directory to argument --input=... )")}
 
 const model = inputFiles.map((file,f)=>{
 				try{
@@ -58,31 +57,10 @@ const model = inputFiles.map((file,f)=>{
 					}
 			})
 		.reduce((set,file,f)=>({
-				view:Object.assign({}, set.view,file.view),
+				view:{...set.view, ...file.view},
 				views:set.views.concat(file.views),
 				errors:set.errors.concat(file.errors||[])
 			}),{view:{},views:[],errors:[]})
 
+console.log(orion(model))
 
-console.log("`model` available for inspection")
-
-// Interactive testing for development...
-const repl = require("repl")
-const r = repl.start({writer:x=>
-		util
-		.inspect(x,{depth:1,colors:true})
-		.replace(/: "([^"]{60})[^"]+"/,': "$1..."')
-	})
-r.context.model = model
-r.context.build = ()=>build(Object.assign(model,{
-		generator:{
-				name: "OJOF Generator",
-				v: "0.0.1",
-
-			},
-		explore:{
-				name: "ojof",
-				label: "All the things"
-			},
-		dialect:"Redshift"
-	})
