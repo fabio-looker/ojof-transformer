@@ -4,49 +4,70 @@
 # Generated on <<:(new Date()).toISOString().slice(0,10)>>
 
 
-<<* x.views :view:v>>
-<<:recurView({view})>>
-<<*>>
+<<* x.views :view:v>><<?!view.weak>><<:recurView({view})>><<?>><<*>>
 <<!function recurView({view,name,label}){
-		var out="";
-		name = name||[view._view];
-		label = [view.label||name2label(view._view)];
-		>>
-		view: <<:name.join("__")>> {
-			label: "<<:label_prefix.concat(label || name2label(name)).join(" > ")"
-			dimension: placeholder {}
-		}
-		<<* equijoin(				
-				view.foreign_keys, fk=>fk._foreign_key, "fk",
-				x.views, v=>v.primary_key._primary_key, "view"
-			) :rel:r >>
-		<<:recurView({
-				view:rel.view,
-				name:name.concat(rel.fk.as||rel.view._view),
-				label:label.concat(rel.fk.label || name2label(rel.fk.as) || rel.view.label || name2label(rel.view._view))
-			})
-		>>
-		<<*>>
+	var out="";
+	name = name||[view._view];
+	label = label||[view.label||name2label(view._view)];
+	>>
+	view: <<:name.join("__")>> {
+		label: "<<:label.join(' > ')>>"
+		dimension: placeholder {}
+		#PK: <<:get("primary_keys.0._primary_key")(view)>>
+		#FKs: <<:coerceArray(view.foreign_keys).map(fk=>fk.to||fk._foreign_key).join(", ")>>
+	}
+	<<* equijoin(
+			coerceArray(view.foreign_keys), fk=>fk.to||fk._foreign_key, "fk",
+			coerceArray(x.views), get("primary_keys.0._primary_key"), "view"
+		) :rel:r >>
+	<<:recurView({
+			view:rel.view,
+			name:name.concat(rel.fk.as||rel.view._view),
+			label:label.concat(rel.fk.label
+				|| name2label(rel.fk.as)
+				|| !rel.view.weak && name2label(rel.fk._foreign_key)
+				|| [])
+		})
+	>>
+	<<*>>
 <<! return out;};>>
 <<!function equijoin(arrL,keyL,asL,arrR,keyR,asR){
 		const idx = arrL.reduce(
-				(idx, objL) => 
+				(idx, objL) =>
 						keyL(objL) === undefined
 						?idx
-						:idx.set(keyL(objL), [...(idx.get(keyL(objL))||[]), ...[objL]]) 
+						:idx.set(keyL(objL), [...(idx.get(keyL(objL))||[]), ...[objL]])
 				,new Map
-			)
- 		const matches = 
+			);
+ 		const matches =
 				arrR
 				.map(objR =>
 						keyR(objR) === undefined
 						? []
-						: idx.get(keyR(objR))
-								.map(objL => ({[asL]:objL, [asR]]:objR}))
+						: (idx.get(keyR(objR))||[])
+								.map(objL => ({[asL]:objL, [asR]:objR}))
 								.reduce((a,b)=>a.concat(b),[])
 					)
-				.reduce((a,b)=>a.concat(b),[])
+				.reduce((a,b)=>a.concat(b),[]);
 		return matches
 };
-function name2label(str){return str.replace?str.replace(/_+([a-Za-z])/g,m=>(" "+m[1].toUpperCase())):undefined;};
+function coerceArray(x){
+		if(x == undefined){return []}
+		return [].concat(x)
+	}
+function name2label(str){return str==undefined?undefined:str.replace?str.replace(/(^|_)+([A-Za-z])/g,(...m)=>((m[1]&&" ")+m[2].toUpperCase())):undefined;};
+function get(path) {
+		if (!(path instanceof Array)) {path = path.split(".")}
+		return obj=>{
+				if (path.length <= 0) {return undefined}
+				var validPath = true;
+				var retval = obj;
+				var mut_path = path.slice();
+				while (mut_path.length > 0) {
+						retval = retval[mut_path.shift()];
+						if (retval === undefined) {return undefined}
+					}
+				return retval
+			}
+	}
 >>

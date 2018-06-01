@@ -1,5 +1,5 @@
 #! /usr/bin/env node
-const generator = {name:"ojof-transformer", v:"0.0.1", date:"2018-05-29"}
+const generator = {name:"ojof-transformer", v:"0.0.0", date:"2018-05-29"}
 const cliArgs = require('minimist')(process.argv.slice(
 		process.argv[0]=="ojof"
 		?1 //e.g. dot-cli --bla
@@ -40,6 +40,7 @@ const model = inputFiles.map((file,f)=>{
 				try{
 						return lookmlParser.parse(
 								read(file)
+								//TODO: Use the new conditional comments feature instead
 								.replace(
 										/(\n|^)\s*#ORION[ \t]*((\n\s*#[^\n]*)*)/g,
 										(full,start,block)=>block.replace(/\n\s*#/g,"\n")
@@ -62,5 +63,4 @@ const model = inputFiles.map((file,f)=>{
 				errors:set.errors.concat(file.errors||[])
 			}),{view:{},views:[],errors:[]})
 
-console.log(orion(model))
-
+console.log(orion({...model, generator}))

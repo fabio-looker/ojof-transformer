@@ -3,14 +3,16 @@ view: users {
 	dimension: name {}
 
 #ORION
-#	primary_key: user_id {
+#	primary_key: user {
 #		sql: ${TABLE}.id ;;
 #	}
-#	foreign_key: shipping {
-#		to: address_id
+#	foreign_key: shipping_address {
+#		to: address
+#		as: shipping
 #	}
-#	foreign_key: billing {
-#		to: address_id
+#	foreign_key: billing_address {
+#		to: address
+#		as: billing
 #		label: "$"
 #	}
 }
@@ -18,20 +20,23 @@ view: addresses {
 	sql_table_name: addresses ;;
 	dimension: street {}
 #ORION
-#	primary_key: address_id {
+#	weak: yes
+#	primary_key: address {
 #		sql: ${TABLE}.id;;
 #	}
-#	foreign_key: state_id {
-#		sql: ${TABLE}.state_id
+#	foreign_key: state {
+#		sql: ${TABLE}.state_id ;;
 #	}
 }
+
 view: states {
 	sql_table_name: states ;;
 	dimension: name {
 		label: "State"
 	}
 #ORION
-#	primary_key: state_id {
-#		sql: ${TABLE}.state ;;
+#	weak: yes
+#	primary_key: state {
+#		sql: ${TABLE}.id ;;
 #	}
 }
