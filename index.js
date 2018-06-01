@@ -11,8 +11,6 @@ const path = require("path")
 const peg = require("pegjs")
 const util = require("util")
 const lookmlParser = require('lookml-parser')
-
-const inputPath = cliArgs.input || cliArgs.i || "."
 const read = f => fs.readFileSync(f,{encoding:'utf-8'})
 
 const dot = require("dot")
@@ -30,37 +28,19 @@ dot.templateSettings = {
 		selfcontained: false
 	};
 const orion = dot.template(read(path.join(__dirname,"orion.dot")))
-const inputFiles=glob.sync(inputPath+"/*.view.lkml")
 const flatten = (a,b) => a.concat(b)
 const fatalParseErrors = true
-
-if(!inputFiles.length){console.warn("Warning: No views were found. (Provide directory to argument --input=... )")}
-
-const model = inputFiles.map((file,f)=>{
-				try{
-						return lookmlParser.parse(
-								read(file)
-								//TODO: Use the new conditional comments feature instead
-								.replace(
-										/(\n|^)\s*#ORION[ \t]*((\n\s*#[^\n]*)*)/g,
-										(full,start,block)=>block.replace(/\n\s*#/g,"\n")
-									)
-							)
-					}
-				catch(e){
-						const o = {
-							error: e.name || "Parsing error",
-							file:    file,
-							position:JSON.stringify(e.location && e.location.start),
-							message: e.message
-						}
-						if(fatalParseErrors){console.error(o);throw o.error}else{return {errors:[o]}}
-					}
-			})
-		.reduce((set,file,f)=>({
-				view:{...set.view, ...file.view},
-				views:set.views.concat(file.views),
-				errors:set.errors.concat(file.errors||[])
-			}),{view:{},views:[],errors:[]})
-
-console.log(orion({...model, generator}))
+const directory = cliArgs.input || cliArgs.i || "."
+const source = directory + "/*.view.lkml"
+!async function(){
+const parsed = await lookmlParser.parseFiles({
+		source, console,
+		conditionalCommentString: "ORION"
+	})
+const views = parsed.files.map(f=>f.views).reduce(flatten,[])
+if(!views.length){
+		if(directory=='.'){console.warn("Warning: No views were found in the current directory. Use --input=path/to/dir")}
+		else{console.warn("Warning: No views were found in directory "+directory)}
+	}
+console.log(orion({views, generator}))
+}()
