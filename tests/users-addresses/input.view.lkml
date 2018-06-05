@@ -9,10 +9,12 @@ view: users {
 #	foreign_key: shipping_address {
 #		to: address
 #		as: shipping
+#		sql: ${TABLE}.shipping_id ;;
 #	}
 #	foreign_key: billing_address {
 #		to: address
 #		as: billing
+#		sql: ${TABLE}.billing_id ;;
 #		label: "$"
 #	}
 }

@@ -1,16 +1,14 @@
 #! /usr/bin/env node
 const generator = {name:"ojof-transformer", v:"0.0.0", date:"2018-05-29"}
 const cliArgs = require('minimist')(process.argv.slice(
-		process.argv[0]=="ojof"
-		?1 //e.g. dot-cli --bla
-		:2 //e.g. node index.js --bla
+		process.argv[0]=="lookml-orion"
+		?1 //e.g. lookml-orion --bla
+		:2 //e.g. lookml-orion.js --bla
 	))
-const glob = require("glob")
 const fs = require("fs")
 const path = require("path")
 const peg = require("pegjs")
-const util = require("util")
-const lookmlParser = require('lookml-parser')
+const lookmlParser = require("lookml-parser")
 const read = f => fs.readFileSync(f,{encoding:'utf-8'})
 
 const dot = require("dot")
@@ -27,7 +25,7 @@ dot.templateSettings = {
 		append: true,
 		selfcontained: false
 	};
-const orion = dot.template(read(path.join(__dirname,"orion.dot")))
+const eavTemplate = dot.template(read(path.join(__dirname,"eav.dot")))
 const flatten = (a,b) => a.concat(b)
 const fatalParseErrors = true
 const directory = cliArgs.input || cliArgs.i || "."
@@ -42,5 +40,5 @@ if(!views.length){
 		if(directory=='.'){console.warn("Warning: No views were found in the current directory. Use --input=path/to/dir")}
 		else{console.warn("Warning: No views were found in directory "+directory)}
 	}
-console.log(orion({views, generator}))
+console.log(orion({views, generator}).replace(/(\n\t*)+(\n\t*)/g,"$2"))
 }()
